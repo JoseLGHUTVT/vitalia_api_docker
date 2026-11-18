@@ -102,3 +102,33 @@ def require_roles(allowed_roles: list[str]) -> Callable:
         return current
 
     return _checker
+
+
+def require_enterprise_plan(
+    current: Usuario = Depends(require_roles(["Administrador", "Coordinador"])),
+    db: Session = Depends(get_db),
+) -> Usuario:
+    clinica_id = getattr(current, "clinica_id_FK", None)
+    if not clinica_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="El usuario no tiene una clínica asociada.",
+        )
+    from app.services.suscripcion_service import obtener_clinica_con_plan
+    _, plan = obtener_clinica_con_plan(db, clinica_id)
+    nombre_plan = (plan.nombre or "").lower()
+    nombre_plan = (
+        nombre_plan.replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+        .strip()
+    )
+    if "empresarial" not in nombre_plan:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso restringido: Esta funcionalidad requiere una suscripción con Plan Empresarial activo.",
+        )
+    return current
+

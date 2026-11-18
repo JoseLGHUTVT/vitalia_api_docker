@@ -265,3 +265,91 @@ class ReporteService:
             "por_estado": dict(por_estado),
             "detalle": sorted(por_doctor.values(), key=lambda x: x["total"], reverse=True),
         }
+
+    # ---------- Resumen General y Comparativa Empresarial ----------
+    def resumen_general(self, desde: date | None, hasta: date | None, umbral: int = 10) -> dict:
+        ocupacion = self.ocupacion_salas(desde, hasta)
+        citas = self.citas_por_doctor(desde, hasta)
+        espera = self.tiempos_espera(desde, hasta)
+        inventario = self.inventario_bajo(umbral)
+        recetas = self.recetas(desde, hasta)
+
+        horas_ocupadas_totales = sum(s.get("horas_ocupadas", 0) for s in ocupacion.get("detalle", []))
+        total_citas = citas.get("total_citas", 0)
+        citas_canceladas = sum(
+            d.get("por_estado", {}).get("cancelada", 0)
+            for d in citas.get("detalle", [])
+        )
+        citas_atendidas = sum(
+            d.get("por_estado", {}).get("atendida", 0) + d.get("por_estado", {}).get("completada", 0)
+            for d in citas.get("detalle", [])
+        )
+
+        return {
+            "desde": _iso(desde),
+            "hasta": _iso(hasta),
+            "total_citas": total_citas,
+            "citas_atendidas": citas_atendidas,
+            "citas_canceladas": citas_canceladas,
+            "total_salas": ocupacion.get("total_salas", 0),
+            "horas_ocupadas_totales": round(horas_ocupadas_totales, 2),
+            "espera_promedio_minutos": espera.get("promedio_minutos", 0),
+            "total_atenciones_espera": espera.get("total_atenciones", 0),
+            "total_medicamentos_stock_bajo": inventario.get("total", 0),
+            "total_recetas": recetas.get("total", 0),
+            "detalle_salas": ocupacion.get("detalle", []),
+            "detalle_doctores": citas.get("detalle", []),
+            "detalle_espera": espera.get("detalle", []),
+            "detalle_inventario": inventario.get("detalle", []),
+            "detalle_recetas": recetas.get("detalle", []),
+        }
+
+    def calcular_periodo_anterior(self, desde: date | None, hasta: date | None) -> tuple[date, date]:
+        hoy = date.today()
+        if desde and hasta:
+            delta_dias = max((hasta - desde).days + 1, 1)
+            ant_hasta = desde - timedelta(days=1)
+            ant_desde = ant_hasta - timedelta(days=delta_dias - 1)
+            return ant_desde, ant_hasta
+        ant_hasta = hoy - timedelta(days=31)
+        ant_desde = hoy - timedelta(days=60)
+        return ant_desde, ant_hasta
+
+    def obtener_comparativa_metricas(self, actual: dict, anterior: dict) -> list[dict]:
+        indicadores = [
+            ("Citas totales", "total_citas", "citas", True),
+            ("Horas ocupadas de salas", "horas_ocupadas_totales", "hrs", True),
+            ("Tiempo medio de espera", "espera_promedio_minutos", "min", False),
+            ("Medicamentos en stock crítico", "total_medicamentos_stock_bajo", "ítems", False),
+            ("Recetas emitidas", "total_recetas", "recetas", True),
+        ]
+        comparativa = []
+        for nombre, clave, unidad, mayor_es_mejor in indicadores:
+            v_act = actual.get(clave, 0)
+            v_ant = anterior.get(clave, 0)
+            if v_ant > 0:
+                variacion_pct = round(((v_act - v_ant) / v_ant) * 100, 1)
+            else:
+                variacion_pct = 0.0 if v_act == 0 else 100.0
+
+            if variacion_pct > 0:
+                tendencia = "up"
+            elif variacion_pct < 0:
+                tendencia = "down"
+            else:
+                tendencia = "neutral"
+
+            favorable = (variacion_pct >= 0) if mayor_es_mejor else (variacion_pct <= 0)
+
+            comparativa.append({
+                "indicador": nombre,
+                "clave": clave,
+                "unidad": unidad,
+                "valor_actual": v_act,
+                "valor_anterior": v_ant,
+                "variacion_pct": variacion_pct,
+                "tendencia": tendencia,
+                "favorable": favorable,
+            })
+        return comparativa
+
