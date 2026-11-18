@@ -55,7 +55,7 @@ class ConfirmarQR(BaseModel):
 
 
 def _url_recuperacion(usuario_id: int, token: str, tipo: str) -> str:
-    base = os.getenv("FRONTEND_RESET_URL", "http://localhost:8081/recuperar").strip()
+    base = os.getenv("FRONTEND_RESET_URL=https://app.vitalia.software/recuperar").strip()
     separador = "&" if "?" in base else "?"
     return f"{base}{separador}{urlencode({'usuario_id': usuario_id, 'token': token, 'tipo': tipo})}"
 
